@@ -1,0 +1,9 @@
+{
+  "id": "sentence-counter",
+  "name": "Sentence Counter",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "author": "Rowan",
+  "description": "Shows the number of sentences in the current note in the status bar.",
+  "main": "main.js"
+}

@@ -2,7 +2,9 @@ const { Plugin, PluginSettingTab, Setting, ItemView } = require("obsidian");
 
 const DEFAULT_SETTINGS = {
     displayLocation: 'statusbar',
-    ignoreCallouts: false
+    ignoreCallouts: false,
+    showWordCount: true,
+    stripMarkdownFromCharCount: true
 };
 
 const VIEW_TYPE_SENTENCE_COUNTER = "sentence-counter-view";
@@ -99,18 +101,19 @@ class SentenceCounter extends Plugin {
         }
 
         if (!editor) {
-            this.displayCount(0, 0);
+            this.displayCount(0, 0, 0);
             return;
         }
 
         const text = editor.getValue();
         const cleaned = this.cleanText(text);
         const sentenceCount = this.countSentences(cleaned);
-        const charCount = this.countCharacters(cleaned);
-        this.displayCount(sentenceCount, charCount);
+        const wordCount = this.countWords(cleaned);
+        const charCount = this.countCharacters(text, cleaned);
+        this.displayCount(sentenceCount, wordCount, charCount);
     }
 
-    displayCount(sentenceCount, charCount) {
+    displayCount(sentenceCount, wordCount, charCount) {
         const text = `${sentenceCount} Sentence${sentenceCount !== 1 ? 's' : ''}`;
 
         if (this.settings.displayLocation === 'statusbar' && this.statusBarEl) {
@@ -119,35 +122,96 @@ class SentenceCounter extends Plugin {
             const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_SENTENCE_COUNTER);
             leaves.forEach(leaf => {
                 if (leaf.view instanceof SentenceCounterView) {
-                    leaf.view.updateCount(sentenceCount, charCount);
+                    leaf.view.updateCount(sentenceCount, wordCount, charCount);
                 }
             });
         }
     }
 
-cleanText(text) {
-    if (!text || !text.trim().length) return "";
-    let cleaned = this.removeFrontmatter(text);
-    
-    // Remove code blocks
-    cleaned = cleaned.replace(/```[\s\S]*?```/g, "");
-    
-    console.log("ignoreCallouts setting:", this.settings.ignoreCallouts);
-    console.log("Text before callout removal:", cleaned);
-    
-    // Remove callouts if ignoreCallouts is enabled
-    if (this.settings.ignoreCallouts) {
-        // Match a callout header and all following blockquote lines
-        cleaned = cleaned.replace(/^>\s*\[!\w+\].*\n(^>.*\n?)*/gm, "");
+    cleanText(text) {
+        if (!text || !text.trim().length) return "";
+        let cleaned = this.removeFrontmatter(text);
+        
+        // Remove code blocks (both fenced and inline)
+        cleaned = cleaned.replace(/```[\s\S]*?```/g, "");
+        cleaned = cleaned.replace(/`[^`]+`/g, "");
+        
+        // Remove callouts if enabled
+        if (this.settings.ignoreCallouts) {
+            // Match callout header and all subsequent blockquote lines
+            // This handles callouts at end of file and multi-line callouts
+            cleaned = cleaned.replace(/^>\s*\[!\w+\][^\n]*\n?(?:^>.*\n?)*/gm, "");
+            // Clean up any remaining standalone blockquote markers from callouts
+            cleaned = cleaned.replace(/^>\s*$/gm, "");
+        }
+        
+        return cleaned;
     }
-    
-    console.log("Text after callout removal:", cleaned);
-    return cleaned;
-}
 
+    stripMarkdown(text) {
+        let stripped = text;
+        
+        // Remove links but keep link text: [text](url) -> text
+        stripped = stripped.replace(/\[([^\]]+)\]\([^\)]+\)/g, "$1");
+        
+        // Remove wiki-links but keep link text: [[link|text]] -> text, [[link]] -> link
+        stripped = stripped.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2");
+        stripped = stripped.replace(/\[\[([^\]]+)\]\]/g, "$1");
+        
+        // Remove images
+        stripped = stripped.replace(/!\[([^\]]*)\]\([^\)]+\)/g, "");
+        
+        // Remove bold and italic markers
+        stripped = stripped.replace(/(\*\*|__)(.*?)\1/g, "$2");
+        stripped = stripped.replace(/(\*|_)(.*?)\1/g, "$2");
+        
+        // Remove strikethrough
+        stripped = stripped.replace(/~~(.*?)~~/g, "$1");
+        
+        // Remove highlights
+        stripped = stripped.replace(/==(.*?)==/g, "$1");
+        
+        // Remove headers
+        stripped = stripped.replace(/^#{1,6}\s+/gm, "");
+        
+        // Remove blockquote markers
+        stripped = stripped.replace(/^>\s*/gm, "");
+        
+        // Remove list markers
+        stripped = stripped.replace(/^[\s]*[-*+]\s+/gm, "");
+        stripped = stripped.replace(/^[\s]*\d+\.\s+/gm, "");
+        
+        // Remove horizontal rules
+        stripped = stripped.replace(/^[\s]*[-*_]{3,}[\s]*$/gm, "");
+        
+        // Remove HTML tags
+        stripped = stripped.replace(/<[^>]+>/g, "");
+        
+        return stripped;
+    }
 
-    countCharacters(text) {
-        return text.length;
+    countCharacters(originalText, cleanedText) {
+        if (this.settings.stripMarkdownFromCharCount) {
+            // Strip markdown from the cleaned text (already has callouts/code removed)
+            const stripped = this.stripMarkdown(cleanedText);
+            // Remove extra whitespace and count
+            return stripped.replace(/\s+/g, " ").trim().length;
+        } else {
+            // Count all characters in cleaned text
+            return cleanedText.length;
+        }
+    }
+
+    countWords(text) {
+        if (!text.trim().length) return 0;
+        
+        // Split on whitespace and filter out empty strings
+        const words = text
+            .trim()
+            .split(/\s+/)
+            .filter(word => word.length > 0);
+        
+        return words.length;
     }
 
     countSentences(text) {
@@ -156,17 +220,23 @@ cleanText(text) {
         const exceptions = [
             "Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Sr.", "Jr.", "vs.", "etc.", 
             "i.e.", "e.g.", "ca.", "cf.", "Inc.", "Ltd.", "Corp.", "Co.",
-            "Ave.", "St.", "Rd.", "Blvd.", ".js", ".css"
+            "Ave.", "St.", "Rd.", "Blvd.", ".js", ".css", ".md", ".txt",
+            "Ph.D.", "M.D.", "B.A.", "M.A.", "U.S.", "U.K.", "a.m.", "p.m."
         ];
 
         let working = text;
 
+        // Replace exceptions with placeholder
         for (const ex of exceptions) {
             const escapedEx = ex.replace(/\./g, "\\.");
             working = working.replace(new RegExp(`\\b${escapedEx}`, "gi"),
-                ex.replace(".", "PERIOD_PLACEHOLDER"));
+                ex.replace(/\./g, "PERIOD_PLACEHOLDER"));
         }
 
+        // Handle ellipsis
+        working = working.replace(/\.{3}/g, "ELLIPSIS_PLACEHOLDER");
+
+        // Split on sentence-ending punctuation
         const sentences = working
             .split(/[.!?]+/)
             .map(s => s.trim())
@@ -196,6 +266,7 @@ class SentenceCounterView extends ItemView {
         super(leaf);
         this.plugin = plugin;
         this.countEl = null;
+        this.wordCountEl = null;
         this.charCountEl = null;
     }
 
@@ -215,23 +286,36 @@ class SentenceCounterView extends ItemView {
         container.style.height = "100%";
         container.style.padding = "20px";
 
-        const title = container.createEl("h1", { text: "Sentence Count" });
-        title.style.marginBottom = "10px";
+        const title = container.createEl("h1", { text: "Statistics" });
+        title.style.marginBottom = "20px";
 
         this.countEl = container.createEl("div", { text: "0 Sentences" });
         this.countEl.style.fontSize = "20px";
         this.countEl.style.fontWeight = "bold";
         this.countEl.style.marginTop = "10px";
 
+        this.wordCountEl = container.createEl("div", { text: "0 Words" });
+        this.wordCountEl.style.fontSize = "18px";
+        this.wordCountEl.style.marginTop = "10px";
+        this.wordCountEl.style.color = "var(--text-muted)";
+
         this.charCountEl = container.createEl("div", { text: "0 Characters" });
         this.charCountEl.style.fontSize = "16px";
-        this.charCountEl.style.marginTop = "15px";
+        this.charCountEl.style.marginTop = "10px";
         this.charCountEl.style.color = "var(--text-muted)";
     }
 
-    updateCount(sentenceCount, charCount) {
+    updateCount(sentenceCount, wordCount, charCount) {
         if (this.countEl) {
             this.countEl.setText(`${sentenceCount} Sentence${sentenceCount !== 1 ? 's' : ''}`);
+        }
+        if (this.wordCountEl) {
+            if (this.plugin.settings.showWordCount) {
+                this.wordCountEl.setText(`${wordCount} Word${wordCount !== 1 ? 's' : ''}`);
+                this.wordCountEl.style.display = "block";
+            } else {
+                this.wordCountEl.style.display = "none";
+            }
         }
         if (this.charCountEl) {
             this.charCountEl.setText(`${charCount} Character${charCount !== 1 ? 's' : ''}`);
@@ -263,6 +347,8 @@ class SentenceCounterSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        containerEl.createEl('h3', { text: 'Content Filtering' });
+
         new Setting(containerEl)
             .setName('Ignore callouts')
             .setDesc('Do not include callout note content in counts')
@@ -272,6 +358,35 @@ class SentenceCounterSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.ignoreCallouts = value;
                         await this.plugin.saveSettings();
+                        this.plugin.updateCount();
+                    })
+            );
+
+        containerEl.createEl('h3', { text: 'Display Options' });
+
+        new Setting(containerEl)
+            .setName('Show word count')
+            .setDesc('Display word count in sidebar view')
+            .addToggle(toggle =>
+                toggle
+                    .setValue(this.plugin.settings.showWordCount)
+                    .onChange(async (value) => {
+                        this.plugin.settings.showWordCount = value;
+                        await this.plugin.saveSettings();
+                        this.plugin.updateCount();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName('Strip markdown from character count')
+            .setDesc('Remove markdown formatting symbols from character count (recommended for accurate reading length)')
+            .addToggle(toggle =>
+                toggle
+                    .setValue(this.plugin.settings.stripMarkdownFromCharCount)
+                    .onChange(async (value) => {
+                        this.plugin.settings.stripMarkdownFromCharCount = value;
+                        await this.plugin.saveSettings();
+                        this.plugin.updateCount();
                     })
             );
     }

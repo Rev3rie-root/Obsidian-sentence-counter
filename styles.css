@@ -1,0 +1,38 @@
+.sentence-counter-view-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    padding: 20px;
+}
+
+.sentence-counter-content {
+    width: 100%;
+    max-width: 300px;
+    text-align: left;
+}
+
+.sentence-counter-title {
+    margin-bottom: 20px;
+    font-size: 24px;
+	border-bottom: 1px solid var(--hr-color);
+}
+
+.sentence-counter-number {
+    font-size: 20px;
+    font-weight: normal;
+    margin-top: 10px;
+}
+
+.sentence-counter-word-count {
+    font-size: 18px;
+    margin-top: 10px;
+    color: var(--text-muted);
+}
+
+.sentence-counter-char-count {
+    font-size: 16px;
+    margin-top: 10px;
+    color: var(--text-muted);
+}

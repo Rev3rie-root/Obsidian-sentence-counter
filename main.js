@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, ItemView } = require("obsidian");
+const { Plugin, PluginSettingTab, Setting, ItemView, MarkdownView } = require("obsidian");
 
 const DEFAULT_SETTINGS = {
     displayLocation: 'statusbar',
@@ -53,23 +53,35 @@ class SentenceCounter extends Plugin {
     }
 
     initializeDisplay() {
-        if (this.settings.displayLocation === 'statusbar') {
+    if (this.settings.displayLocation === 'statusbar') {
+        if (!this.statusBarEl) {
             this.statusBarEl = this.addStatusBarItem();
             this.statusBarEl.setText("0 Sentences");
-        } else {
-            this.activateSidebarView();
         }
+    } else if (this.settings.displayLocation === 'sidebar') {
+        this.activateSidebarView();
     }
+}
 
     async refreshDisplay() {
+    if (this.settings.displayLocation === 'statusbar') {
+        this.app.workspace.detachLeavesOfType(VIEW_TYPE_SENTENCE_COUNTER);
+        
+        
+        this.initializeDisplay();
+    } else if (this.settings.displayLocation === 'sidebar') {
         if (this.statusBarEl) {
             this.statusBarEl.remove();
             this.statusBarEl = null;
         }
-        this.app.workspace.detachLeavesOfType(VIEW_TYPE_SENTENCE_COUNTER);
+        
+        
         this.initializeDisplay();
-        this.updateCount();
     }
+
+    
+    this.updateCount();
+}
 
     async activateSidebarView() {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_SENTENCE_COUNTER);
@@ -92,7 +104,7 @@ class SentenceCounter extends Plugin {
         if (this.app.workspace.activeEditor?.editor) {
             editor = this.app.workspace.activeEditor.editor;
         } else {
-            const activeView = this.app.workspace.getActiveViewOfType(require("obsidian").MarkdownView);
+            const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
             if (activeView) editor = activeView.editor;
         }
 
@@ -128,6 +140,7 @@ class SentenceCounter extends Plugin {
         let cleaned = this.removeFrontmatter(text);
         cleaned = cleaned.replace(/```[\s\S]*?```/g, "");
         cleaned = cleaned.replace(/`[^`]+`/g, "");
+		cleaned = cleaned.replace(/(^>.*(?:\r?\n>.*)*)/gm, "");
         if (this.settings.ignoreCallouts) {
             const lines = cleaned.split('\n');
             let insideCallout = false;

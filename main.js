@@ -26,9 +26,19 @@ class SentenceCounter extends Plugin {
             VIEW_TYPE_SENTENCE_COUNTER,
             (leaf) => new SentenceCounterView(leaf, this)
         );
+		this.addCommand({
+        id: 'open-sentence-counter',
+        name: 'Open Sentence Counter',
+        callback: () => this.activateSidebarView()
+    	});
+
 
         this.addSettingTab(new SentenceCounterSettingTab(this.app, this));
-        this.initializeDisplay();
+
+        this.app.workspace.onLayoutReady(() => {
+            this.initializeDisplay();
+            this.updateCount();
+        });
 
         this.debouncedUpdate = this.debounce(() => this.updateCount(), 150);
 
@@ -39,8 +49,6 @@ class SentenceCounter extends Plugin {
         this.registerEvent(
             this.app.workspace.on("editor-change", () => this.debouncedUpdate())
         );
-
-        this.updateCount();
     }
 
     async loadSettings() {
@@ -59,7 +67,11 @@ class SentenceCounter extends Plugin {
             this.statusBarEl.setText("0 Sentences");
         }
     } else if (this.settings.displayLocation === 'sidebar') {
-        this.activateSidebarView();
+        // Only reveal if it already exists; don't create it on startup
+        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_SENTENCE_COUNTER);
+        if (existing.length > 0) {
+            this.app.workspace.revealLeaf(existing[0]);
+        }
     }
 }
 

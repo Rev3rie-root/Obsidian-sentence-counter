@@ -67,11 +67,10 @@ class SentenceCounter extends Plugin {
             this.statusBarEl.setText("0 Sentences");
         }
     } else if (this.settings.displayLocation === 'sidebar') {
-        // Only reveal if it already exists; don't create it on startup
-        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_SENTENCE_COUNTER);
-        if (existing.length > 0) {
-            this.app.workspace.revealLeaf(existing[0]);
-        }
+        // Don't reveal on startup even if a leaf exists from a previous
+        // session — that's what was forcing the sidebar open on every
+        // reload. The view will still update silently via updateCount();
+        // only the "Open Sentence Counter" command should ever reveal it.
     }
 }
 
